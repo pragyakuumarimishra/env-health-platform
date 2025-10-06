@@ -1,0 +1,1 @@
+import React from 'react';\nimport Dashboard from './components/Dashboard';\nimport Login from './components/Login';\n\nfunction App() {\n  return (\n    <div className="App">\n      <h1>Welcome to the Env Health Platform</h1>\n      <Dashboard />\n      <Login />\n    </div>\n  );\n}\n\nexport default App;

@@ -1,0 +1,377 @@
+# Architecture Overview
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Frontend (React)                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
+│  │ Login/   │  │Dashboard │  │ Activity │  │Indoor Sensor │   │
+│  │Register  │  │  Widget  │  │  Widget  │  │   Monitor    │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
+│       │             │              │                │            │
+│       └─────────────┴──────────────┴────────────────┘            │
+│                           │                                       │
+│                      HTTP/REST                                    │
+└───────────────────────────┼───────────────────────────────────────┘
+                            │
+                            │ CORS
+                            │
+┌───────────────────────────┼───────────────────────────────────────┐
+│                      Backend (FastAPI)                            │
+│                           │                                       │
+│  ┌────────────────────────┴────────────────────────┐             │
+│  │           API Router (main.py)                  │             │
+│  └───┬────┬────┬────┬────┬────┬────┬────┬────────┘             │
+│      │    │    │    │    │    │    │    │                       │
+│  ┌───▼─┐┌─▼──┐┌▼──┐┌▼──┐┌▼──┐┌▼──┐┌▼──┐┌▼──┐                 │
+│  │Auth ││ AQ ││Ind││Sym││Exp││Act││Rou││Ale│                  │
+│  │ API ││API ││API││API││API││API││API││API│                  │
+│  └──┬──┘└─┬──┘└┬──┘└┬──┘└┬──┘└┬──┘└┬──┘└┬──┘                 │
+│     │     │    │    │    │    │    │    │                       │
+│     │     └────┴────┴────┴────┴────┴────┴──────┐                │
+│     │                                           │                │
+│  ┌──▼────────┐                        ┌────────▼────────┐       │
+│  │   Auth    │                        │   Business      │       │
+│  │ (JWT/     │                        │     Logic       │       │
+│  │  Bcrypt)  │                        │  (algorithms)   │       │
+│  └───────────┘                        └────────┬────────┘       │
+│                                                 │                │
+│  ┌──────────────────────────────────────────────▼──────────┐    │
+│  │            Database Layer (SQLAlchemy)                  │    │
+│  └──────────────────────────────────────────────┬──────────┘    │
+└─────────────────────────────────────────────────┼───────────────┘
+                                                   │
+┌──────────────────────────────────────────────────┼───────────────┐
+│                    Data Layer                    │               │
+│  ┌────────────┐  ┌─────────────┐  ┌─────────────▼──────────┐   │
+│  │   Redis    │  │    MQTT     │  │      PostgreSQL         │   │
+│  │  (Cache)   │  │  (Sensors)  │  │  ┌───────────────────┐  │   │
+│  └────────────┘  └─────────────┘  │  │ Users             │  │   │
+│                                    │  │ Sensor Devices    │  │   │
+│                                    │  │ Sensor Readings   │  │   │
+│                                    │  │ AQ External       │  │   │
+│                                    │  │ Forecasts         │  │   │
+│                                    │  │ Symptom Logs      │  │   │
+│                                    │  │ Exposure Logs     │  │   │
+│                                    │  │ Routes            │  │   │
+│                                    │  │ Alerts            │  │   │
+│                                    │  │ Recommendations   │  │   │
+│                                    │  └───────────────────┘  │   │
+│                                    └─────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    External Services (Future)                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
+│  │OpenWeather│ │   WAQI   │  │ Mapbox  │  │  NASA FIRMS  │    │
+│  │   Map     │  │  (AQI)   │  │(Routing)│  │  (Fires)     │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘    │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    IoT Sensors (ESP32/etc)                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                       │
+│  │ PMS5003  │  │  SCD41   │  │ BME680   │                       │
+│  │ (PM2.5/  │  │  (CO2)   │  │ (VOC/    │                       │
+│  │  PM10)   │  │          │  │  Temp/RH)│                       │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘                       │
+│       └─────────────┴─────────────┘                              │
+│                     │                                             │
+│              MQTT/HTTP POST                                       │
+└─────────────────────┼───────────────────────────────────────────┘
+                      │
+                      ▼
+            Backend Indoor API
+```
+
+## Data Flow
+
+### 1. User Authentication Flow
+
+```
+User → Frontend (Login) → Backend Auth API → Validate Credentials
+                                                      ↓
+                                              Generate JWT Token
+                                                      ↓
+                                           Return to Frontend
+                                                      ↓
+                                      Store in localStorage
+                                                      ↓
+                                  Include in all subsequent requests
+```
+
+### 2. Air Quality Display Flow
+
+```
+User → Dashboard → Request AQ Data → Backend AQ API
+                                           ↓
+                                    Query Database
+                                           ↓
+                                 (If empty: Return Mock)
+                                           ↓
+                                    Format Response
+                                           ↓
+                                  Return to Frontend
+                                           ↓
+                            Display in AirQualityDisplay Component
+```
+
+### 3. Sensor Data Ingestion Flow
+
+```
+IoT Device → Generate Reading → Format JSON Payload
+                                        ↓
+                                HTTP POST to Indoor API
+                                        ↓
+                                Validate Schema
+                                        ↓
+                           Write to sensor_readings table
+                                        ↓
+                          (Optional: Trigger Alert Check)
+                                        ↓
+                              Return Success/Error
+```
+
+### 4. Activity Recommendation Flow
+
+```
+User → Enter Activity → Frontend → POST /activity/recommend
+                                           ↓
+                                  Extract User Profile
+                                           ↓
+                               Fetch Current AQ Data
+                                           ↓
+                           Run Scoring Algorithm (jogging_score)
+                                           ↓
+                              Store Recommendation
+                                           ↓
+                            Return Score & Rationale
+                                           ↓
+                            Display in UI with Color Coding
+```
+
+## Component Details
+
+### Frontend Components
+
+| Component | Purpose | Key Features |
+|-----------|---------|--------------|
+| App.js | Main application | Authentication state, routing |
+| Login.js | Authentication UI | Register/Login forms, token storage |
+| Dashboard.js | Main dashboard | Profile display, component layout |
+| AirQualityDisplay.js | AQ visualization | Current AQI, pollutant levels |
+| IndoorSensors.js | Sensor management | Device list, add sensor |
+| ActivityRecommendation.js | Activity suggestions | Score display, rationale |
+
+### Backend API Endpoints
+
+| Module | Endpoints | Purpose |
+|--------|-----------|---------|
+| auth.py | /register, /login, /profile | User management |
+| aq.py | /current, /forecast | Air quality data |
+| indoor.py | /devices, /readings | Sensor management |
+| symptoms.py | /symptoms | Health tracking |
+| exposure.py | /today | Exposure monitoring |
+| activity.py | /recommend | Activity suggestions |
+| routing.py | /plan | Route planning |
+| alerts.py | /alerts | Notification history |
+
+### Database Tables
+
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| users | User accounts | email, password_hash, sensitivity_level |
+| sensor_devices | IoT devices | user_id, label, location |
+| sensor_readings | Time-series data | device_id, ts, pm25, co2, etc. |
+| aq_external | External AQ | source, station_id, pollutants |
+| forecasts | Predictions | ts_target, pm25_p50, model_version |
+| symptom_logs | Health tracking | user_id, symptoms, severity |
+| exposure_logs | Daily exposure | date, cumulative_pm25, risk_score |
+| routes | Route history | origin, destination, exposure |
+| alerts | Notifications | type, payload, status |
+| activity_recommendations | Suggestions | activity_type, score, rationale |
+
+## Security Architecture
+
+### Authentication & Authorization
+
+```
+┌──────────────┐
+│  User Login  │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Verify Password      │
+│ (bcrypt hash check)  │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Generate JWT Token   │
+│ - Subject: user email│
+│ - Expiry: 30 min     │
+│ - Signature: SECRET  │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Return to Client     │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Store in localStorage│
+└──────────────────────┘
+
+For each protected request:
+
+┌──────────────────────┐
+│ Extract JWT from     │
+│ Authorization header │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Validate JWT         │
+│ - Check signature    │
+│ - Check expiry       │
+│ - Extract user email │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Load User from DB    │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Process Request      │
+└──────────────────────┘
+```
+
+## Scalability Considerations
+
+### Current (MVP)
+
+- Single server deployment
+- Direct database connections
+- Synchronous processing
+- No load balancing
+
+### Production Ready (Future)
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 Load Balancer (nginx)                │
+└──────┬────────────────────────────────────┬─────────┘
+       │                                    │
+   ┌───▼───────┐                       ┌───▼───────┐
+   │  Backend  │                       │  Backend  │
+   │ Instance 1│                       │ Instance 2│
+   └───┬───────┘                       └───┬───────┘
+       │                                   │
+       └───────────────┬───────────────────┘
+                       │
+              ┌────────▼─────────┐
+              │ Connection Pool  │
+              └────────┬─────────┘
+                       │
+       ┌───────────────┼───────────────┐
+       │               │               │
+   ┌───▼────┐    ┌────▼────┐    ┌────▼────┐
+   │ Redis  │    │ Postgres│    │  MQTT   │
+   │(Cache) │    │(Primary)│    │ Broker  │
+   └────────┘    └────┬────┘    └─────────┘
+                      │
+                 ┌────▼────┐
+                 │ Postgres│
+                 │(Replica)│
+                 └─────────┘
+```
+
+## Technology Stack
+
+### Backend
+- **Framework**: FastAPI 0.109.0
+- **ORM**: SQLAlchemy 2.0.25
+- **Database**: PostgreSQL 12+
+- **Authentication**: python-jose + passlib
+- **Validation**: Pydantic 2.5.3
+- **Migrations**: Alembic 1.13.1
+
+### Frontend
+- **Framework**: React 18.2.0
+- **UI Library**: Material-UI 5.14
+- **HTTP Client**: Axios 1.6.2
+- **Charts**: Recharts 2.10.3
+
+### Infrastructure
+- **Database**: PostgreSQL 15
+- **Cache**: Redis 7
+- **Message Queue**: Eclipse Mosquitto 2
+- **Container**: Docker & Docker Compose
+
+## Deployment Architecture (Recommended)
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    CDN (CloudFlare)                   │
+│                  Static Frontend Assets               │
+└──────────────────────┬───────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────┐
+│              Web Server (nginx)                       │
+│  - Serve React build                                 │
+│  - Reverse proxy to backend                          │
+│  - SSL termination                                   │
+└──────────────────────┬───────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────┐
+│         Application Server (Gunicorn + Uvicorn)      │
+│  - Multiple worker processes                         │
+│  - FastAPI application                               │
+└──────────────────────┬───────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────┐
+│              Data Layer (Managed Services)            │
+│  ┌────────────┐  ┌─────────────┐  ┌──────────────┐  │
+│  │  RDS       │  │ ElastiCache │  │  IoT Core    │  │
+│  │(PostgreSQL)│  │   (Redis)   │  │   (MQTT)     │  │
+│  └────────────┘  └─────────────┘  └──────────────┘  │
+└───────────────────────────────────────────────────────┘
+```
+
+## Performance Metrics
+
+### Target Metrics (from specification)
+
+| Metric | Target | Current MVP |
+|--------|--------|-------------|
+| API p95 latency | < 800ms | ~100ms (no external APIs) |
+| Availability | 99% | Development only |
+| Forecast cycle | < 2 min | Not yet implemented |
+| Sensor data completeness | > 90% | Depends on devices |
+| Database connections | Pool of 20 | Single connection |
+
+## Future Enhancements
+
+### Phase 2
+- Real-time WebSocket updates
+- MQTT sensor ingestion pipeline
+- Background task queue (Celery)
+- LSTM forecasting models
+- External API integration
+
+### Phase 3
+- Geospatial queries (PostGIS)
+- Advanced caching strategy
+- What-if scenario engine
+- Multi-region deployment
+
+### Phase 4
+- Microservices architecture
+- Event-driven architecture
+- Machine learning pipeline
+- Real-time analytics
